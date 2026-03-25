@@ -40,19 +40,38 @@ interface SantiagosWorldDB extends DBSchema {
   };
 }
 
+/**
+ * Current schema version. Bump this when adding stores or indexes.
+ *
+ * Version history:
+ *   1 - Initial: checkins + chat stores
+ *   (future) 2 - e.g. chat-sessions, agent-data, user-preferences
+ */
+const DB_VERSION = 1;
+
 let dbPromise: Promise<IDBPDatabase<SantiagosWorldDB>> | null = null;
 
 function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<SantiagosWorldDB>('santiagos-world', 1, {
-      upgrade(db) {
-        const checkinStore = db.createObjectStore('checkins', { keyPath: 'id' });
-        checkinStore.createIndex('by-date', 'created_at');
-        checkinStore.createIndex('by-country', 'country');
-        checkinStore.createIndex('by-continent', 'continent');
+    dbPromise = openDB<SantiagosWorldDB>('santiagos-world', DB_VERSION, {
+      upgrade(db, oldVersion, _newVersion, _transaction) {
+        // Run migrations incrementally from whatever old version the user had
+        if (oldVersion < 1) {
+          const checkinStore = db.createObjectStore('checkins', { keyPath: 'id' });
+          checkinStore.createIndex('by-date', 'created_at');
+          checkinStore.createIndex('by-country', 'country');
+          checkinStore.createIndex('by-continent', 'continent');
 
-        const chatStore = db.createObjectStore('chat', { keyPath: 'id' });
-        chatStore.createIndex('by-date', 'created_at');
+          const chatStore = db.createObjectStore('chat', { keyPath: 'id' });
+          chatStore.createIndex('by-date', 'created_at');
+        }
+
+        // Future migrations go here:
+        // if (oldVersion < 2) {
+        //   db.createObjectStore('chat-sessions', { keyPath: 'id' });
+        //   db.createObjectStore('agent-data', { keyPath: 'id' });
+        //   db.createObjectStore('user-preferences', { keyPath: 'key' });
+        // }
       },
     });
   }

@@ -1,8 +1,15 @@
 'use client';
 
 import { type CheckIn } from '@/lib/db';
-import { CONTINENT_COLORS } from '@/lib/geo';
+import { CONTINENT_COLORS, TAG_COLORS, RATING_COLOR } from '@/lib/constants';
 
+function buildTagClasses(tag: string): string {
+  const c = TAG_COLORS[tag];
+  if (!c) return 'bg-white/5 text-text-secondary border-white/8';
+  return `bg-[${c.bg}]/12 text-[${c.text}] border-[${c.border}]/15`;
+}
+
+// Pre-build the Tailwind class strings so they are statically detectable
 const TAG_STYLES: Record<string, string> = {
   travel: 'bg-[#118ab2]/12 text-[#118ab2] border-[#118ab2]/15',
   work: 'bg-[#7b68ee]/12 text-[#7b68ee] border-[#7b68ee]/15',
@@ -89,7 +96,7 @@ export default function CheckInDetail({ checkin, onClose }: Props) {
             </span>
           ))}
           {checkin.rating && (
-            <span className="text-[#ffd166] text-[13px] ml-auto tracking-wider">
+            <span style={{ color: RATING_COLOR }} className="text-[13px] ml-auto tracking-wider">
               {'★'.repeat(checkin.rating)}
               <span className="text-white/8">{'★'.repeat(5 - checkin.rating)}</span>
             </span>
@@ -100,4 +107,4 @@ export default function CheckInDetail({ checkin, onClose }: Props) {
   );
 }
 
-export { TAG_STYLES };
+export { TAG_STYLES, buildTagClasses };

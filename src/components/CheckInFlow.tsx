@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { addCheckIn, type CheckIn } from '@/lib/db';
 import { getCurrentPosition, reverseGeocode } from '@/lib/geo';
+import { PARTICLE_COLORS, THEME } from '@/lib/constants';
+import { publish } from '@/lib/events';
 
 const TAG_OPTIONS = [
   { id: 'travel', label: 'Travel', emoji: '✈️' },
@@ -72,7 +74,7 @@ export default function CheckInFlow() {
       address: geo.address, note: n, tags: t, rating: r, created_at: new Date().toISOString(),
     };
     await addCheckIn(checkin);
-    window.dispatchEvent(new Event('checkin-added'));
+    publish('checkin-added');
     spawnParticles();
     setStep('done');
   };
@@ -89,11 +91,10 @@ export default function CheckInFlow() {
   };
 
   const spawnParticles = () => {
-    const colors = ['#06d6a0', '#118ab2', '#ffd166', '#ef476f', '#7b68ee', '#ff8c42'];
     setParticles(Array.from({ length: 16 }, (_, i) => ({
       id: i, x: 0, y: 0,
       angle: (360 / 16) * i,
-      color: colors[i % colors.length],
+      color: PARTICLE_COLORS[i % PARTICLE_COLORS.length],
     })));
   };
 
@@ -125,14 +126,14 @@ export default function CheckInFlow() {
           justifyContent: 'center',
           gap: '40px',
           padding: '32px',
-          background: 'radial-gradient(ellipse at 50% 40%, rgba(6,214,160,0.06) 0%, rgba(17,138,178,0.03) 40%, #0a0a0f 70%)',
+          background: `radial-gradient(ellipse at 50% 40%, rgba(6,214,160,0.06) 0%, rgba(17,138,178,0.03) 40%, ${THEME.bgPrimary} 70%)`,
         }}
       >
         <div style={{ textAlign: 'center' }}>
-          <h1 style={{ fontSize: '30px', fontFamily: 'var(--font-jakarta)', fontWeight: 800, color: '#f0f0f5', letterSpacing: '-0.02em', marginBottom: '8px' }}>
+          <h1 style={{ fontSize: '30px', fontFamily: 'var(--font-jakarta)', fontWeight: 800, color: THEME.textPrimary, letterSpacing: '-0.02em', marginBottom: '8px' }}>
             Check In
           </h1>
-          <p style={{ fontSize: '15px', fontFamily: 'var(--font-dm)', color: '#8888a0' }}>
+          <p style={{ fontSize: '15px', fontFamily: 'var(--font-dm)', color: THEME.textSecondary }}>
             Drop a pin at your current location
           </p>
         </div>
@@ -176,11 +177,11 @@ export default function CheckInFlow() {
             style={{
               position: 'relative', zIndex: 10,
               width: '180px', height: '180px', borderRadius: '50%',
-              background: 'linear-gradient(135deg, #06d6a0, #118ab2)',
+              background: `linear-gradient(135deg, ${THEME.accent}, ${THEME.accentSecondary})`,
               color: 'white', fontFamily: 'var(--font-jakarta)', fontWeight: 700, fontSize: '20px',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
               border: 'none', cursor: 'pointer',
-              boxShadow: 'inset 0 2px 20px rgba(255,255,255,0.15), 0 0 40px rgba(6,214,160,0.25), 0 8px 32px rgba(0,0,0,0.3)',
+              boxShadow: `inset 0 2px 20px rgba(255,255,255,0.15), 0 0 40px rgba(6,214,160,0.25), 0 8px 32px rgba(0,0,0,0.3)`,
               transition: 'transform 0.15s ease',
               WebkitTapHighlightColor: 'transparent',
             }}
@@ -201,7 +202,7 @@ export default function CheckInFlow() {
           onClick={handleQuickSave}
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: '#555570', fontSize: '13px', fontFamily: 'var(--font-dm)',
+            color: THEME.textTertiary, fontSize: '13px', fontFamily: 'var(--font-dm)',
             display: 'flex', alignItems: 'center', gap: '6px',
             minHeight: '44px', transition: 'color 0.2s',
             WebkitTapHighlightColor: 'transparent',

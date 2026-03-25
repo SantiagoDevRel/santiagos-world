@@ -1,6 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
+import { NAV } from '@/lib/constants';
 
 export default function BottomNav() {
   const pathname = usePathname();
@@ -14,7 +15,7 @@ export default function BottomNav() {
         left: 0,
         right: 0,
         zIndex: 50,
-        background: 'rgba(10, 10, 15, 0.85)',
+        background: NAV.bgOverlay,
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
         borderTop: '1px solid rgba(255,255,255,0.06)',
@@ -102,7 +103,7 @@ function NavItem({
         padding: 0,
         minHeight: '44px',
         minWidth: '44px',
-        color: active ? '#06d6a0' : '#555570',
+        color: active ? NAV.activeColor : NAV.inactiveColor,
         transition: 'color 0.2s ease',
       }}
     >
@@ -117,7 +118,7 @@ function NavItem({
             width: '24px',
             height: '3px',
             borderRadius: '0 0 3px 3px',
-            background: '#06d6a0',
+            background: NAV.activeColor,
           }}
         />
       )}

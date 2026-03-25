@@ -3,19 +3,58 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getAllCheckIns, type CheckIn } from '@/lib/db';
 import { getCurrentPosition } from '@/lib/geo';
-import { CONTINENT_COLORS } from '@/lib/geo';
+import { CONTINENT_COLORS, THEME, PIN, GLASS } from '@/lib/constants';
+import { subscribe } from '@/lib/events';
 import CheckInDetail from './CheckInDetail';
 
 declare global {
   interface Window {
     google: typeof google;
+    __googleMapsLoaderPromise?: Promise<void>;
   }
+}
+
+/**
+ * Promise-based singleton loader for the Google Maps script.
+ * Handles three states: already loaded, loading in progress, not started.
+ */
+function loadGoogleMapsScript(apiKey: string): Promise<void> {
+  // Already loaded
+  if (window.google?.maps) return Promise.resolve();
+
+  // Loading in progress — reuse existing promise
+  if (window.__googleMapsLoaderPromise) return window.__googleMapsLoaderPromise;
+
+  // Not started — create & cache the promise
+  window.__googleMapsLoaderPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector(
+      'script[src*="maps.googleapis.com/maps/api/js"]'
+    ) as HTMLScriptElement | null;
+
+    if (existing) {
+      // Script tag exists but hasn't finished loading yet
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')));
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&v=weekly`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Google Maps'));
+    document.head.appendChild(script);
+  });
+
+  return window.__googleMapsLoaderPromise;
 }
 
 export default function MapView() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const listenerRefs = useRef<google.maps.MapsEventListener[]>([]);
   const [checkins, setCheckins] = useState<CheckIn[]>([]);
   const [selectedCheckIn, setSelectedCheckIn] = useState<CheckIn | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -33,17 +72,10 @@ export default function MapView() {
       setError('Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to .env.local');
       return;
     }
-    if (window.google?.maps) { setMapLoaded(true); return; }
-    const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
-    if (existing) { existing.addEventListener('load', () => setMapLoaded(true)); return; }
 
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&v=weekly`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => setMapLoaded(true);
-    script.onerror = () => setError('Failed to load Google Maps');
-    document.head.appendChild(script);
+    loadGoogleMapsScript(apiKey)
+      .then(() => setMapLoaded(true))
+      .catch(() => setError('Failed to load Google Maps'));
   }, []);
 
   // Init map
@@ -60,22 +92,21 @@ export default function MapView() {
 
       mapInstanceRef.current = new google.maps.Map(mapRef.current!, {
         center, zoom,
-        mapId: 'santiagos-world-map',
         disableDefaultUI: true,
         zoomControl: true,
         zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
         styles: [
-          { elementType: 'geometry', stylers: [{ color: '#0d0d16' }] },
-          { elementType: 'labels.text.stroke', stylers: [{ color: '#0d0d16' }] },
-          { elementType: 'labels.text.fill', stylers: [{ color: '#444460' }] },
-          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#16162a' }] },
-          { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#16162a' }] },
-          { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#1a1a30' }] },
-          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#080810' }] },
+          { elementType: 'geometry', stylers: [{ color: THEME.bgSecondary }] },
+          { elementType: 'labels.text.stroke', stylers: [{ color: THEME.bgSecondary }] },
+          { elementType: 'labels.text.fill', stylers: [{ color: THEME.labelText }] },
+          { featureType: 'road', elementType: 'geometry', stylers: [{ color: THEME.bgTertiary }] },
+          { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: THEME.bgTertiary }] },
+          { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: THEME.bgHighway }] },
+          { featureType: 'water', elementType: 'geometry', stylers: [{ color: THEME.water }] },
           { featureType: 'poi', stylers: [{ visibility: 'off' }] },
           { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-          { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#1a1a2e' }] },
-          { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#222240' }] },
+          { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: THEME.borderSubtle }] },
+          { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: THEME.borderCountry }] },
         ],
       });
       loadCheckins();
@@ -86,6 +117,10 @@ export default function MapView() {
   // Place markers
   useEffect(() => {
     if (!mapInstanceRef.current || !mapLoaded) return;
+
+    // Clean up previous markers and their listeners
+    listenerRefs.current.forEach((l) => l.remove());
+    listenerRefs.current = [];
     markersRef.current.forEach((m) => (m.map = null));
     markersRef.current = [];
 
@@ -94,8 +129,8 @@ export default function MapView() {
       const pinEl = document.createElement('div');
       pinEl.style.cssText = `
         width:14px; height:14px; border-radius:50%;
-        background:${color}; border:2px solid rgba(255,255,255,0.9);
-        box-shadow: 0 0 10px ${color}55, 0 2px 6px rgba(0,0,0,0.5);
+        background:${color}; border:2px solid ${PIN.borderColor};
+        box-shadow: 0 0 10px ${color}${PIN.glowAlpha}, 0 2px 6px ${PIN.shadowColor};
         cursor:pointer; transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
       `;
       pinEl.onmouseenter = () => { pinEl.style.transform = 'scale(1.5)'; };
@@ -107,25 +142,33 @@ export default function MapView() {
         content: pinEl,
         title: `${checkin.city}, ${checkin.country}`,
       });
-      marker.addListener('click', () => setSelectedCheckIn(checkin));
+      const listener = marker.addListener('click', () => setSelectedCheckIn(checkin));
+      listenerRefs.current.push(listener);
       markersRef.current.push(marker);
     });
+
+    // Cleanup when effect re-runs or unmounts
+    return () => {
+      listenerRefs.current.forEach((l) => l.remove());
+      listenerRefs.current = [];
+      markersRef.current.forEach((m) => (m.map = null));
+      markersRef.current = [];
+    };
   }, [checkins, mapLoaded]);
 
-  // Listen for new checkins
+  // Listen for new checkins via typed pub/sub
   useEffect(() => {
-    const handler = () => loadCheckins();
-    window.addEventListener('checkin-added', handler);
-    return () => window.removeEventListener('checkin-added', handler);
+    const unsubscribe = subscribe('checkin-added', () => loadCheckins());
+    return unsubscribe;
   }, [loadCheckins]);
 
   // Error state
   if (error) {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0f', padding: '32px', textAlign: 'center' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: THEME.bgPrimary, padding: '32px', textAlign: 'center' }}>
         <div>
-          <p style={{ color: '#f0f0f5', fontFamily: 'var(--font-jakarta)', fontWeight: 700, fontSize: '18px', marginBottom: '8px' }}>Map unavailable</p>
-          <p style={{ color: '#8888a0', fontSize: '14px', fontFamily: 'var(--font-dm)' }}>{error}</p>
+          <p style={{ color: THEME.textPrimary, fontFamily: 'var(--font-jakarta)', fontWeight: 700, fontSize: '18px', marginBottom: '8px' }}>Map unavailable</p>
+          <p style={{ color: THEME.textSecondary, fontSize: '14px', fontFamily: 'var(--font-dm)' }}>{error}</p>
         </div>
       </div>
     );
@@ -138,10 +181,10 @@ export default function MapView() {
 
       {/* Loading */}
       {!mapLoaded && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0f' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: THEME.bgPrimary }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-            <div style={{ width: '40px', height: '40px', border: '3px solid rgba(6,214,160,0.15)', borderTopColor: '#06d6a0', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-            <p style={{ color: '#555570', fontSize: '13px', fontFamily: 'var(--font-dm)' }}>Loading map...</p>
+            <div style={{ width: '40px', height: '40px', border: `3px solid rgba(6,214,160,0.15)`, borderTopColor: THEME.accent, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <p style={{ color: THEME.textTertiary, fontSize: '13px', fontFamily: 'var(--font-dm)' }}>Loading map...</p>
           </div>
         </div>
       )}
@@ -166,7 +209,7 @@ export default function MapView() {
               pointerEvents: 'auto',
               padding: '8px 20px',
               borderRadius: '999px',
-              background: 'rgba(10, 10, 15, 0.8)',
+              background: GLASS.titlePillBg,
               backdropFilter: 'blur(16px)',
               WebkitBackdropFilter: 'blur(16px)',
               border: '1px solid rgba(255,255,255,0.06)',
@@ -181,7 +224,7 @@ export default function MapView() {
                 fontSize: '14px',
                 fontFamily: 'var(--font-jakarta)',
                 fontWeight: 700,
-                color: '#f0f0f5',
+                color: THEME.textPrimary,
                 letterSpacing: '-0.01em',
               }}
             >

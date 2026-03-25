@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { getAllCheckIns, type CheckIn } from '@/lib/db';
-import { CONTINENT_COLORS } from '@/lib/geo';
+import { CONTINENT_COLORS, RATING_COLOR } from '@/lib/constants';
+import { subscribe } from '@/lib/events';
 import { TAG_STYLES } from '@/components/CheckInDetail';
 
 const CONTINENT_LIST = ['Europe', 'Africa', 'LATAM', 'Asia', 'North America', 'Oceania'];
@@ -31,9 +32,10 @@ export default function HistoryPage() {
 
   useEffect(() => {
     getAllCheckIns().then(setCheckins);
-    const handler = () => getAllCheckIns().then(setCheckins);
-    window.addEventListener('checkin-added', handler);
-    return () => window.removeEventListener('checkin-added', handler);
+    const unsubscribe = subscribe('checkin-added', () => {
+      getAllCheckIns().then(setCheckins);
+    });
+    return unsubscribe;
   }, []);
 
   const activeContinents: string[] = [...new Set(checkins.map((c) => c.continent))].sort();
@@ -134,7 +136,7 @@ export default function HistoryPage() {
                         </span>
                       ))}
                       {checkin.rating && (
-                        <span className="text-[#ffd166] text-[11px] ml-auto">{'★'.repeat(checkin.rating)}</span>
+                        <span style={{ color: RATING_COLOR }} className="text-[11px] ml-auto">{'★'.repeat(checkin.rating)}</span>
                       )}
                     </div>
                   )}
