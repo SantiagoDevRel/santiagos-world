@@ -53,8 +53,9 @@ function loadGoogleMapsScript(apiKey: string): Promise<void> {
 export default function MapView() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const markersRef = useRef<(google.maps.marker.AdvancedMarkerElement | google.maps.Marker)[]>([]);
   const listenerRefs = useRef<google.maps.MapsEventListener[]>([]);
+  const useAdvancedMarkers = !!process.env.NEXT_PUBLIC_GOOGLE_MAP_ID;
   const [checkins, setCheckins] = useState<CheckIn[]>([]);
   const [selectedCheckIn, setSelectedCheckIn] = useState<CheckIn | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -90,24 +91,27 @@ export default function MapView() {
         zoom = 13;
       } catch { /* default world */ }
 
+      const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID;
+      const darkStyles: google.maps.MapTypeStyle[] = [
+        { elementType: 'geometry', stylers: [{ color: THEME.bgSecondary }] },
+        { elementType: 'labels.text.stroke', stylers: [{ color: THEME.bgSecondary }] },
+        { elementType: 'labels.text.fill', stylers: [{ color: THEME.labelText }] },
+        { featureType: 'road', elementType: 'geometry', stylers: [{ color: THEME.bgTertiary }] },
+        { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: THEME.bgTertiary }] },
+        { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: THEME.bgHighway }] },
+        { featureType: 'water', elementType: 'geometry', stylers: [{ color: THEME.water }] },
+        { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+        { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+        { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: THEME.borderSubtle }] },
+        { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: THEME.borderCountry }] },
+      ];
+
       mapInstanceRef.current = new google.maps.Map(mapRef.current!, {
         center, zoom,
         disableDefaultUI: true,
         zoomControl: true,
         zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
-        styles: [
-          { elementType: 'geometry', stylers: [{ color: THEME.bgSecondary }] },
-          { elementType: 'labels.text.stroke', stylers: [{ color: THEME.bgSecondary }] },
-          { elementType: 'labels.text.fill', stylers: [{ color: THEME.labelText }] },
-          { featureType: 'road', elementType: 'geometry', stylers: [{ color: THEME.bgTertiary }] },
-          { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: THEME.bgTertiary }] },
-          { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: THEME.bgHighway }] },
-          { featureType: 'water', elementType: 'geometry', stylers: [{ color: THEME.water }] },
-          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-          { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-          { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: THEME.borderSubtle }] },
-          { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: THEME.borderCountry }] },
-        ],
+        ...(mapId ? { mapId } : { styles: darkStyles }),
       });
       loadCheckins();
     };
@@ -121,37 +125,60 @@ export default function MapView() {
     // Clean up previous markers and their listeners
     listenerRefs.current.forEach((l) => l.remove());
     listenerRefs.current = [];
-    markersRef.current.forEach((m) => (m.map = null));
+    markersRef.current.forEach((m) => { if (m instanceof google.maps.Marker) m.setMap(null); else m.map = null; });
     markersRef.current = [];
 
     checkins.forEach((checkin) => {
       const color = CONTINENT_COLORS[checkin.continent] || CONTINENT_COLORS.Other;
-      const pinEl = document.createElement('div');
-      pinEl.style.cssText = `
-        width:14px; height:14px; border-radius:50%;
-        background:${color}; border:2px solid ${PIN.borderColor};
-        box-shadow: 0 0 10px ${color}${PIN.glowAlpha}, 0 2px 6px ${PIN.shadowColor};
-        cursor:pointer; transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
-      `;
-      pinEl.onmouseenter = () => { pinEl.style.transform = 'scale(1.5)'; };
-      pinEl.onmouseleave = () => { pinEl.style.transform = 'scale(1)'; };
+      const position = { lat: checkin.latitude, lng: checkin.longitude };
 
-      const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: mapInstanceRef.current!,
-        position: { lat: checkin.latitude, lng: checkin.longitude },
-        content: pinEl,
-        title: `${checkin.city}, ${checkin.country}`,
-      });
-      const listener = marker.addListener('click', () => setSelectedCheckIn(checkin));
-      listenerRefs.current.push(listener);
-      markersRef.current.push(marker);
+      if (useAdvancedMarkers) {
+        // Advanced Markers (requires Map ID)
+        const pinEl = document.createElement('div');
+        pinEl.style.cssText = `
+          width:14px; height:14px; border-radius:50%;
+          background:${color}; border:2px solid ${PIN.borderColor};
+          box-shadow: 0 0 10px ${color}${PIN.glowAlpha}, 0 2px 6px ${PIN.shadowColor};
+          cursor:pointer; transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
+        `;
+        pinEl.onmouseenter = () => { pinEl.style.transform = 'scale(1.5)'; };
+        pinEl.onmouseleave = () => { pinEl.style.transform = 'scale(1)'; };
+
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map: mapInstanceRef.current!,
+          position,
+          content: pinEl,
+          title: `${checkin.city}, ${checkin.country}`,
+        });
+        const listener = marker.addListener('click', () => setSelectedCheckIn(checkin));
+        listenerRefs.current.push(listener);
+        markersRef.current.push(marker);
+      } else {
+        // Classic Markers (no Map ID needed)
+        const marker = new google.maps.Marker({
+          map: mapInstanceRef.current!,
+          position,
+          title: `${checkin.city}, ${checkin.country}`,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillColor: color,
+            fillOpacity: 1,
+            strokeColor: PIN.borderColor,
+            strokeWeight: 2,
+            scale: 7,
+          },
+        });
+        const listener = marker.addListener('click', () => setSelectedCheckIn(checkin));
+        listenerRefs.current.push(listener);
+        markersRef.current.push(marker);
+      }
     });
 
     // Cleanup when effect re-runs or unmounts
     return () => {
       listenerRefs.current.forEach((l) => l.remove());
       listenerRefs.current = [];
-      markersRef.current.forEach((m) => (m.map = null));
+      markersRef.current.forEach((m) => { if (m instanceof google.maps.Marker) m.setMap(null); else m.map = null; });
       markersRef.current = [];
     };
   }, [checkins, mapLoaded]);
