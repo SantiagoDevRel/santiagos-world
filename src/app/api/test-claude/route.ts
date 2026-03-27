@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
 export async function GET() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'ANTHROPIC_API_KEY not set in environment variables' },
+      { error: 'ANTHROPIC_API_KEY / CLAUDE_API_KEY not set in environment variables' },
       { status: 500 }
     );
   }

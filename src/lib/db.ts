@@ -111,12 +111,28 @@ export async function addChatMessage(message: ChatMessage): Promise<void> {
   await db.put('chat', message);
 }
 
+/** Alias used by the chat page */
+export const saveChatMessage = addChatMessage;
+
 export async function getAllChatMessages(): Promise<ChatMessage[]> {
   const db = await getDB();
   return db.getAllFromIndex('chat', 'by-date');
+}
+
+/**
+ * Get the last N chat messages, ordered oldest-first.
+ * If no limit is given, returns all messages.
+ */
+export async function getChatMessages(limit?: number): Promise<ChatMessage[]> {
+  const all = await getAllChatMessages();
+  if (!limit || limit >= all.length) return all;
+  return all.slice(-limit);
 }
 
 export async function clearChat(): Promise<void> {
   const db = await getDB();
   await db.clear('chat');
 }
+
+/** Alias used by the chat page */
+export const clearChatMessages = clearChat;
