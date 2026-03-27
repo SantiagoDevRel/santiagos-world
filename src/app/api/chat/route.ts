@@ -202,7 +202,6 @@ async function singlePlacesSearch(
       },
     },
     maxResultCount: 10,
-    rankPreference: 'RATING' as const,
     languageCode: 'en',
   };
 
