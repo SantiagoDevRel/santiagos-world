@@ -36,6 +36,7 @@ BEHAVIOR RULES:
 15. CRITICAL LOCATION RULE: If the user mentions a specific place, neighborhood, mall, or area (e.g. "near Urbanización Los Mangos", "in Viva Envigado", "around El Poblado"), ALWAYS use the geocode_location tool FIRST to get exact coordinates of that place, then search around THOSE coordinates. Do NOT default to the user's GPS when they specify a different location.
 16. For every place you recommend, ALWAYS include a Google Maps link. The tool results include a googleMapsUrl field — use it.
 17. Use SHORT, SIMPLE keyword queries for search_nearby_places. Examples: "gym", "coffee shop", "restaurant", "coworking space". NOT long descriptive phrases.
+18. CRITICAL: Call search_nearby_places ONLY ONCE per user request. If the first search returns results, use them immediately to write your response. Do NOT search again with different keywords.
 
 RESPONSE FORMAT FOR RECOMMENDATIONS:
 📍 [Place Name] — ⭐ [rating]/5
@@ -729,9 +730,42 @@ export async function POST(request: NextRequest) {
             ];
           }
 
-          // Note: if we broke out of the loop naturally, done was already sent.
-          // This only fires if we hit MAX_ITERATIONS without a final answer.
-          // The loop sends done on break, so this is a safety net.
+          // If we hit MAX_ITERATIONS without a text response, force a final answer
+          // by calling Claude one more time with tools disabled
+          if (iterations >= MAX_ITERATIONS) {
+            console.log('[Chat] Hit MAX_ITERATIONS — forcing final response without tools');
+            const finalResponse = await anthropic.messages.create({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 1024,
+              temperature: 0.3,
+              system: SYSTEM_PROMPT,
+              tool_choice: { type: 'none' },
+              messages: currentMessages,
+            });
+
+            if (finalResponse.usage) {
+              totalInputTokens += finalResponse.usage.input_tokens || 0;
+              totalOutputTokens += finalResponse.usage.output_tokens || 0;
+            }
+
+            const textContent = finalResponse.content
+              .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+              .map((b) => b.text)
+              .join('');
+
+            if (textContent) send({ type: 'text_delta', text: textContent });
+
+            const inputCost = totalInputTokens * (3 / 1_000_000);
+            const outputCost = totalOutputTokens * (15 / 1_000_000);
+            send({
+              type: 'done',
+              usage: {
+                input_tokens: totalInputTokens,
+                output_tokens: totalOutputTokens,
+                total_cost_usd: +(inputCost + outputCost).toFixed(6),
+              },
+            });
+          }
 
         } catch (error) {
           console.error('Chat error:', error);
