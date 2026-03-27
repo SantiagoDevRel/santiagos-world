@@ -1,4 +1,4 @@
-const CACHE_NAME = 'santiagos-world-v1';
+const CACHE_NAME = 'santiagos-world-v2';
 const MAX_CACHE_SIZE = 100;
 
 const STATIC_ASSETS = [
