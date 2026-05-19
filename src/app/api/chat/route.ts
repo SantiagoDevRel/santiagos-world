@@ -660,7 +660,7 @@ export async function POST(request: NextRequest) {
             iterations++;
 
             const response = await anthropic.messages.create({
-              model: 'claude-sonnet-4-20250514',
+              model: 'claude-sonnet-4-6',
               max_tokens: 2048,
               temperature: 0.3,
               system: SYSTEM_PROMPT,
@@ -734,7 +734,7 @@ export async function POST(request: NextRequest) {
           if (iterations >= MAX_ITERATIONS) {
             console.log('[Chat] Hit MAX_ITERATIONS — forcing final response without tools');
             const finalResponse = await anthropic.messages.create({
-              model: 'claude-sonnet-4-20250514',
+              model: 'claude-sonnet-4-6',
               max_tokens: 1024,
               temperature: 0.3,
               system: SYSTEM_PROMPT,

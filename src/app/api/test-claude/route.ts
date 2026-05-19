@@ -15,7 +15,7 @@ export async function GET() {
     const client = new Anthropic({ apiKey });
 
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 50,
       messages: [
         { role: 'user', content: 'Say hello in exactly 5 words' }

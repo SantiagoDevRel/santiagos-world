@@ -11,41 +11,76 @@ declare global {
   interface Window {
     google: typeof google;
     __googleMapsLoaderPromise?: Promise<void>;
+    gm_authFailure?: () => void;
   }
 }
 
 /**
- * Promise-based singleton loader for the Google Maps script.
- * Handles three states: already loaded, loading in progress, not started.
+ * Promise-based singleton loader using Google's official inline bootstrap.
+ *
+ * The old `<script onload>` approach is unreliable with `v=weekly`: `onload`
+ * fires when the tiny bootstrap loads, which can be BEFORE `google.maps.Map`
+ * actually exists, and it can only catch resource-level network errors (so an
+ * ad/tracking blocker or an unenabled API surfaces as a generic "failed to
+ * load" with no detail). The bootstrap below defines `google.maps.importLibrary`,
+ * and awaiting `importLibrary(...)` resolves only once the real library is ready
+ * and rejects with a descriptive error otherwise.
  */
-function loadGoogleMapsScript(apiKey: string): Promise<void> {
-  // Already loaded
-  if (window.google?.maps) return Promise.resolve();
+/**
+ * Injects the Google Maps JS bootstrap that defines `google.maps.importLibrary`.
+ * This is a readable rewrite of Google's official inline loader snippet.
+ */
+function bootstrapGoogleMaps(apiKey: string): void {
+  const g = window.google || (window.google = {} as typeof google);
+  const maps = (g.maps || (g.maps = {} as typeof google.maps)) as unknown as {
+    importLibrary?: (name: string, ...rest: unknown[]) => Promise<unknown>;
+    __ib__?: (value: unknown) => void;
+  };
+  if (maps.importLibrary) return; // already bootstrapped
 
-  // Loading in progress — reuse existing promise
+  const requested = new Set<string>();
+  let scriptPromise: Promise<void> | undefined;
+
+  const ensureScript = (): Promise<void> => {
+    if (scriptPromise) return scriptPromise;
+    scriptPromise = new Promise<void>((resolve, reject) => {
+      const params = new URLSearchParams();
+      params.set('libraries', [...requested].join(','));
+      params.set('key', apiKey);
+      params.set('v', 'weekly');
+      params.set('callback', 'google.maps.__ib__');
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?${params}`;
+      script.async = true;
+      maps.__ib__ = () => resolve();
+      script.onerror = () => reject(new Error('The Google Maps JavaScript API could not load.'));
+      document.head.append(script);
+    });
+    return scriptPromise;
+  };
+
+  maps.importLibrary = (name: string, ...rest: unknown[]) => {
+    requested.add(name);
+    return ensureScript().then(() =>
+      (g.maps.importLibrary as (n: string, ...r: unknown[]) => Promise<unknown>)(name, ...rest)
+    );
+  };
+}
+
+function loadGoogleMapsScript(apiKey: string): Promise<void> {
   if (window.__googleMapsLoaderPromise) return window.__googleMapsLoaderPromise;
 
-  // Not started — create & cache the promise
-  window.__googleMapsLoaderPromise = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector(
-      'script[src*="maps.googleapis.com/maps/api/js"]'
-    ) as HTMLScriptElement | null;
-
-    if (existing) {
-      // Script tag exists but hasn't finished loading yet
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')));
-      return;
+  window.__googleMapsLoaderPromise = (async () => {
+    if (!window.google?.maps?.importLibrary) {
+      bootstrapGoogleMaps(apiKey);
     }
-
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&v=weekly`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Maps'));
-    document.head.appendChild(script);
-  });
+    // Resolves only when the real libraries are available; rejects with a
+    // descriptive error if the API can't be reached/initialized.
+    await Promise.all([
+      window.google.maps.importLibrary('maps'),
+      window.google.maps.importLibrary('marker'),
+    ]);
+  })();
 
   return window.__googleMapsLoaderPromise;
 }
@@ -74,9 +109,22 @@ export default function MapView() {
       return;
     }
 
+    // Google calls this when the key/referer/billing is invalid. The script's
+    // onload still fires on auth failure, so without this the map just shows
+    // blank with no clue why.
+    window.gm_authFailure = () => {
+      setError(
+        'Google Maps rejected the API key. Check that the key is valid, billing is enabled, and this domain is in the key\'s allowed referrers.'
+      );
+    };
+
     loadGoogleMapsScript(apiKey)
       .then(() => setMapLoaded(true))
-      .catch(() => setError('Failed to load Google Maps'));
+      .catch(() =>
+        setError(
+          'Could not load Google Maps. This is usually an ad/tracking blocker or privacy browser blocking maps.googleapis.com — try disabling it for this site. If that is not it, the Maps JavaScript API may be disabled or billing not enabled on the key.'
+        )
+      );
   }, []);
 
   // Init map
